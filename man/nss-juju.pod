@@ -47,7 +47,7 @@ Reverse lookup is not supported.
 
 =head1 BUGS
 
-File issues at L<https://github.com/frobware/nss-juju/issues>
+File issues at L<https://github.com/juju/nss-juju/issues>
 
 =head1 AUTHORS
 

@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([nss-juju], [0.1], [andrew.mcdermott@canonical.com], [nss-juju], [https://github.com/frobware/nss-juju/])
+AC_INIT([nss-juju], [0.1], [andrew.mcdermott@canonical.com], [nss-juju], [https://github.com/juju/nss-juju/])
 
 AC_CONFIG_SRCDIR([src/nss-juju.c])
 AC_CONFIG_HEADERS([config.h])
