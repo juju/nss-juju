@@ -66,6 +66,14 @@ static struct matcher matchers[] = {
 	{ IPv4_HOSTNAME_RE, NULL }
 };
 
+static char *localnets[5] = {
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"fc00::/7",
+	NULL
+};
+
 /*
  * shared library constructor
  */
@@ -373,12 +381,22 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 	}
 	idx = 0;
 	hidx = idx;
-	
+	found = 0;
 	fd = fopen("/etc/nss-juju-revnets", "r");
 	if (fd == NULL) { /* TODO fallback to local networks */
-	
+		char ** p = localnets;
+		while (*p != NULL && !found) {
+			char* laddr = buffer;
+			char* faddr = laddr + sizeof(struct in6_addr);
+			char* txt = faddr + sizeof(struct in6_addr);
+			memcpy(laddr, addr, address_length);
+			strcpy(txt, *p);
+			if (!_cmp_masked_addr(txt, faddr, laddr, address_length, af)) {
+				found = 1;
+			}
+			p++;
+		}
 	} else {
-		found = 0;
 		while (!feof(fd) && !found) {
 			char* laddr = buffer;
 			char* faddr = laddr + sizeof(struct in6_addr);
@@ -392,10 +410,11 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 			}
 		}
 		fclose(fd);
-		if (!found) {
-			*errnop = ENOENT;
-			goto return_nss_status_notfound;
-		}
+	}
+
+	if (!found) {
+		*errnop = ENOENT;
+		goto return_nss_status_notfound;
 	}
  
 	switch (af) {
