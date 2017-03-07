@@ -3,6 +3,8 @@ global:
 _nss_juju_gethostbyname2_r;
 _nss_juju_gethostbyname3_r;
 _nss_juju_gethostbyname_r;
+_nss_juju_gethostbyaddr2_r;
+_nss_juju_gethostbyaddr_r;
 local:
 *;
 };

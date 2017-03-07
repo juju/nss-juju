@@ -310,3 +310,89 @@ enum nss_status _nss_juju_gethostbyname_r(
 					  errnop, herrnop,
 					  NULL, NULL);
 }
+
+enum nss_status _nss_juju_gethostbyaddr2_r(
+	const void *addr,
+	socklen_t len,
+	int af,
+	struct hostent *result,
+	char *buffer,
+	size_t buflen,
+	int *errnop,
+	int *herrnop,
+	int32_t *ttlp)
+{
+	const uint8_t *c = addr;
+	size_t idx, hidx, h_alias_idx, aidx, alistidx, hlen, address_length;
+	address_length = af == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+
+	if (addr == NULL || buflen < 63 + address_length + 3 * sizeof(char*) || len < address_length || af != AF_INET || af != AF_INET6) {
+		*errnop = EINVAL;
+		goto return_nss_status_unavail;
+	}
+	idx = 0;
+	hidx = idx;
+	/* TODO check the networks against /etc/nss_juju.conf */
+
+	switch (af) {
+		case AF_INET:
+			hlen = sprintf(buffer+hidx, "juju-ip-%hhu-%hhu-%hhu-%hhu", c[0], c[1], c[2], c[3]);
+			break;
+		case AF_INET6:
+			hlen = sprintf(buffer+hidx, "juju-ip-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15]);
+			break;
+		default:
+			*errnop = ENOENT;
+			goto return_nss_status_unavail;
+	}
+	idx += ALIGN_PTR(hlen);
+
+	h_alias_idx = idx;
+	idx += ALIGN_PTR(sizeof(char*));
+	*((char**) (buffer + h_alias_idx)) = NULL;
+
+	aidx = idx;
+	idx += ALIGN_PTR(address_length);
+	memcpy(buffer + aidx, addr, address_length);
+
+	alistidx = idx;
+	idx += ALIGN_PTR(2 * sizeof(char**));
+	((char**) (buffer + alistidx))[0] = buffer + aidx;
+	((char**) (buffer + alistidx))[1] = NULL;
+
+	result->h_addrtype = af;
+	result->h_length = address_length;
+	result->h_name = (char*) buffer;
+	result->h_addr_list = (char**) (buffer + alistidx);
+	result->h_aliases = (char**) (buffer + h_alias_idx);
+
+	if (ttlp != NULL) {
+		*ttlp = 3600;
+	}
+	*errnop = 0;
+	*herrnop = 0;
+	return NSS_STATUS_SUCCESS;
+
+return_nss_status_unavail:
+	*herrnop = NO_DATA;
+	return NSS_STATUS_UNAVAIL;
+
+/* return_nss_status_notfound:
+	*herrnop = HOST_NOT_FOUND;
+	return NSS_STATUS_NOTFOUND; */
+}
+
+enum nss_status _nss_juju_gethostbyaddr_r(
+	const void *addr,
+	socklen_t len,
+	int af,
+	struct hostent *result,
+	char *buffer,
+	size_t buflen,
+	int *errnop,
+	int *h_errnop)
+{
+	return _nss_juju_gethostbyaddr2_r(addr, len, af, result,
+					  buffer, buflen, errnop,
+					  h_errnop, NULL);
+}

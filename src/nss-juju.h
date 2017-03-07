@@ -40,4 +40,25 @@ extern enum nss_status _nss_juju_gethostbyname_r
 	 int		*errnop,
 	 int		*herrnop);
 
+extern enum nss_status _nss_juju_gethostbyaddr2_r
+	(const void *addr,
+	 socklen_t len,
+	 int af,
+	 struct hostent *result,
+	 char *buffer,
+	 size_t buflen,
+	 int *errnop,
+	 int *h_errnop,
+	 int32_t *ttlp);
+
+extern enum nss_status _nss_juju_gethostbyaddr_r
+	(const void *addr,
+	 socklen_t len,
+	 int af,
+	 struct hostent *result,
+	 char *buffer,
+	 size_t buflen,
+	 int *errnop,
+	 int *h_errnop);
+
 #endif	/* _NSS_JUJU_H_ */
