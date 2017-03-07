@@ -12,6 +12,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -311,6 +312,41 @@ enum nss_status _nss_juju_gethostbyname_r(
 					  NULL, NULL);
 }
 
+static int _cmp_masked_addr(char *txt, char *faddr, char *laddr, size_t address_length, int af) {
+	char * sep;
+	size_t mask, compl, bits;
+	int r;
+	sep = strchr(txt, '/');
+	if (sep != NULL) {
+		*sep = 0;
+		mask = atoi(++sep);
+		if (mask > address_length * 8) {
+			return -1;
+		}
+	} else {
+		mask = address_length * 8;
+	}
+	r = inet_pton(af, txt, faddr);
+	if (r != 1) {
+		return -1;
+	}
+	compl = mask / 8;
+	bits = mask % 8;
+	if (bits) {
+		laddr[compl] &= (0xff << (8-bits));
+		faddr[compl] &= (0xff << (8-bits));
+		compl++;
+	}
+	for (; compl < address_length; compl++) {
+		laddr[compl] = 0;
+		faddr[compl] = 0;
+	}
+	if (!memcmp(laddr, faddr, address_length)) {
+		return 0;
+	}
+	return -1;
+}
+
 enum nss_status _nss_juju_gethostbyaddr2_r(
 	const void *addr,
 	socklen_t len,
@@ -323,17 +359,45 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 	int32_t *ttlp)
 {
 	const uint8_t *c = addr;
+	int found;
 	size_t idx, hidx, h_alias_idx, aidx, alistidx, hlen, address_length;
+	FILE * fd;
+	
 	address_length = af == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
-
-	if (addr == NULL || buflen < 63 + address_length + 3 * sizeof(char*) || len < address_length || af != AF_INET || af != AF_INET6) {
+	if (addr == NULL || 
+	    buflen < strlen("juju-ip-") + INET6_ADDRSTRLEN + address_length + 3 * sizeof(char*) || 
+	    len < address_length || 
+	    (af != AF_INET && af != AF_INET6)) {
 		*errnop = EINVAL;
 		goto return_nss_status_unavail;
 	}
 	idx = 0;
 	hidx = idx;
-	/* TODO check the networks against /etc/nss_juju.conf */
-
+	
+	fd = fopen("/etc/nss-juju-revnets", "r");
+	if (fd == NULL) { /* TODO fallback to local networks */
+	
+	} else {
+		found = 0;
+		while (!feof(fd) && !found) {
+			char* laddr = buffer;
+			char* faddr = laddr + sizeof(struct in6_addr);
+			char* txt = faddr + sizeof(struct in6_addr);
+			memcpy(laddr, addr, address_length);
+			if (fscanf(fd, "%64s", txt) != 1) {
+				break;
+			}
+			if (!_cmp_masked_addr(txt, faddr, laddr, address_length, af)) {
+				found = 1;
+			}
+		}
+		fclose(fd);
+		if (!found) {
+			*errnop = ENOENT;
+			goto return_nss_status_notfound;
+		}
+	}
+ 
 	switch (af) {
 		case AF_INET:
 			hlen = sprintf(buffer+hidx, "juju-ip-%hhu-%hhu-%hhu-%hhu", c[0], c[1], c[2], c[3]);
@@ -377,9 +441,9 @@ return_nss_status_unavail:
 	*herrnop = NO_DATA;
 	return NSS_STATUS_UNAVAIL;
 
-/* return_nss_status_notfound:
+return_nss_status_notfound:
 	*herrnop = HOST_NOT_FOUND;
-	return NSS_STATUS_NOTFOUND; */
+	return NSS_STATUS_NOTFOUND;
 }
 
 enum nss_status _nss_juju_gethostbyaddr_r(
