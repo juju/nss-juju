@@ -44,6 +44,22 @@ IPv6 names must be fully expanded (i.e., no collapsed 0's (zeros)).
 	64 bytes from 192.168.20.1: icmp_seq=3 ttl=64 time=0.048 ms
 	64 bytes from 192.168.20.1: icmp_seq=4 ttl=64 time=0.048 ms
 
+### Reverse address resolution
+
+Reverse address resolution is by default provided for RFC1918 local
+networks and fc00::/7. If a file "/etc/nss-juju-nets.conf" exists it's
+read instead - it should contain whitespace separated list of networks
+for which the reverse resolution should be provided:
+
+	$ getent hosts juju-ip-172-19-0-84
+	172.19.0.84     juju-ip-172-19-0-84
+
+	$ ping -c 3 juju-ip-172-19-0-84
+	PING juju-ip-172-19-0-84 (172.19.0.84) 56(84) bytes of data.
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=1 ttl=64 time=0.043 ms
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=2 ttl=64 time=0.035 ms
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=3 ttl=64 time=0.075 ms
+
 ## Limitations
 
 ### Reverse lookup needs to be handled by the host

@@ -74,6 +74,8 @@ static char *localnets[5] = {
 	NULL
 };
 
+char _nssjuju_configfilename[] = "/etc/nss-juju-nets.conf";
+
 /*
  * shared library constructor
  */
@@ -382,8 +384,8 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 	idx = 0;
 	hidx = idx;
 	found = 0;
-	fd = fopen("/etc/nss-juju-revnets", "r");
-	if (fd == NULL) { /* TODO fallback to local networks */
+	fd = fopen(_nssjuju_configfilename, "r");
+	if (fd == NULL) {
 		char ** p = localnets;
 		while (*p != NULL && !found) {
 			char* laddr = buffer;
