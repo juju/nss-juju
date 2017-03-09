@@ -322,39 +322,53 @@ enum nss_status _nss_juju_gethostbyname_r(
 					  NULL, NULL);
 }
 
-static int _cmp_masked_addr(char *txt, char *faddr, char *laddr, size_t address_length, int af) {
+/*
+ * Checks if address is in a subnet.
+ * Input:
+ *  txt - text format address/mask, mask is optional
+ *  laddr - address we want to compare, will be overwritten
+ * Output:
+ *  1 if address is subnet, 0 otherwise
+ */
+static int _addr_in_subnet(char *txt,
+			   const char *laddr,
+			   size_t address_length,
+			   int af)
+{
+	char faddr[sizeof(struct in6_addr)];
 	char * sep;
 	size_t mask, compl, bits;
 	int r;
+	unsigned char bmask;
+
+	if (address_length > sizeof(faddr)) {
+		return 0;
+	}
+
 	sep = strchr(txt, '/');
 	if (sep != NULL) {
 		*sep = 0;
 		mask = atoi(++sep);
-		if (mask > address_length * 8) {
-			return -1;
-		}
 	} else {
 		mask = address_length * 8;
 	}
-	r = inet_pton(af, txt, faddr);
-	if (r != 1) {
+
+	if (mask > address_length * 8) {
 		return -1;
 	}
-	compl = mask / 8;
-	bits = mask % 8;
-	if (bits) {
-		laddr[compl] &= (0xff << (8-bits));
-		faddr[compl] &= (0xff << (8-bits));
-		compl++;
-	}
-	for (; compl < address_length; compl++) {
-		laddr[compl] = 0;
-		faddr[compl] = 0;
-	}
-	if (!memcmp(laddr, faddr, address_length)) {
+
+	r = inet_pton(af, txt, faddr);
+	if (r != 1) {
 		return 0;
 	}
-	return -1;
+
+	compl = mask / 8;
+	bits = mask % 8;
+	bmask = 0xff << (8-bits);
+	if (!memcmp(laddr, faddr, compl) && ((laddr[compl] & bmask) == (faddr[compl] & bmask))) {
+		return 1;
+	}
+	return 0;
 }
 
 enum nss_status _nss_juju_gethostbyaddr2_r(
@@ -368,48 +382,35 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 	int *herrnop,
 	int32_t *ttlp)
 {
-	const uint8_t *c = addr;
+	const uint8_t *c = (uint8_t*) addr;
 	int found;
 	size_t idx, hidx, h_alias_idx, aidx, alistidx, hlen, address_length;
 	FILE * fd;
-	
+
 	address_length = af == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
-	if (addr == NULL || 
-	    buflen < strlen("juju-ip-") + INET6_ADDRSTRLEN + address_length + 3 * sizeof(char*) || 
-	    len < address_length || 
+	if (addr == NULL ||
+	    buflen < strlen("juju-ip-") + INET6_ADDRSTRLEN + address_length + 3 * sizeof(char*) ||
+	    len < address_length ||
 	    (af != AF_INET && af != AF_INET6)) {
 		*errnop = EINVAL;
 		goto return_nss_status_unavail;
 	}
-	idx = 0;
-	hidx = idx;
 	found = 0;
+
 	fd = fopen(_nssjuju_configfilename, "r");
 	if (fd == NULL) {
 		char ** p = localnets;
 		while (*p != NULL && !found) {
-			char* laddr = buffer;
-			char* faddr = laddr + sizeof(struct in6_addr);
-			char* txt = faddr + sizeof(struct in6_addr);
-			memcpy(laddr, addr, address_length);
-			strcpy(txt, *p);
-			if (!_cmp_masked_addr(txt, faddr, laddr, address_length, af)) {
-				found = 1;
-			}
+			strcpy(buffer, *p);
+			found = _addr_in_subnet(buffer, addr, address_length, af);
 			p++;
 		}
 	} else {
 		while (!feof(fd) && !found) {
-			char* laddr = buffer;
-			char* faddr = laddr + sizeof(struct in6_addr);
-			char* txt = faddr + sizeof(struct in6_addr);
-			memcpy(laddr, addr, address_length);
-			if (fscanf(fd, "%64s", txt) != 1) {
+			if (fscanf(fd, "%64s", buffer) != 1) {
 				break;
 			}
-			if (!_cmp_masked_addr(txt, faddr, laddr, address_length, af)) {
-				found = 1;
-			}
+			found = _addr_in_subnet(buffer, addr, address_length, af);
 		}
 		fclose(fd);
 	}
@@ -418,13 +419,20 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 		*errnop = ENOENT;
 		goto return_nss_status_notfound;
 	}
- 
+
+	idx = 0;
+	hidx = idx;
 	switch (af) {
 		case AF_INET:
-			hlen = sprintf(buffer+hidx, "juju-ip-%hhu-%hhu-%hhu-%hhu", c[0], c[1], c[2], c[3]);
+			hlen = sprintf(buffer+hidx, "juju-ip-%hhu-%hhu-%hhu-%hhu",
+				       c[0], c[1], c[2], c[3]);
 			break;
 		case AF_INET6:
-			hlen = sprintf(buffer+hidx, "juju-ip-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15]);
+			hlen = sprintf(buffer+hidx,
+				       "juju-ip-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x",
+				       c[0], c[1], c[2], c[3], c[4], c[5],
+				       c[6], c[7], c[8], c[9], c[10], c[11],
+				       c[12], c[13], c[14], c[15]);
 			break;
 		default:
 			*errnop = ENOENT;
@@ -452,7 +460,7 @@ enum nss_status _nss_juju_gethostbyaddr2_r(
 	result->h_aliases = (char**) (buffer + h_alias_idx);
 
 	if (ttlp != NULL) {
-		*ttlp = 3600;
+		*ttlp = 0;
 	}
 	*errnop = 0;
 	*herrnop = 0;
