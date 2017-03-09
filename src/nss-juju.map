@@ -5,6 +5,7 @@ _nss_juju_gethostbyname3_r;
 _nss_juju_gethostbyname_r;
 _nss_juju_gethostbyaddr2_r;
 _nss_juju_gethostbyaddr_r;
+_nssjuju_configfilename;
 local:
 *;
 };

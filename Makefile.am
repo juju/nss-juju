@@ -41,12 +41,16 @@ man/%.8: man/%.pod
 # tests
 #
 
-noinst_PROGRAMS = tests/check_gethostbyname
-TESTS = tests/check_gethostbyname
+noinst_PROGRAMS = tests/check_gethostbyname tests/check_gethostbyaddr
+TESTS = tests/check_gethostbyname tests/check_gethostbyaddr
 
 tests_check_gethostbyname_SOURCES = tests/gethostbyname.c
 tests_check_gethostbyname_CFLAGS = $(AM_CFLAGS) $(CHECK_CFLAGS) $(COVERAGE_CFLAGS)
 tests_check_gethostbyname_LDADD = $(AM_LDFLAGS) $(CHECK_LIBS) $(COVERAGE_LDFLAGS) libnss_juju.la
+
+tests_check_gethostbyaddr_SOURCES = tests/gethostbyaddr.c
+tests_check_gethostbyaddr_CFLAGS = $(AM_CFLAGS) $(CHECK_CFLAGS) $(COVERAGE_CFLAGS)
+tests_check_gethostbyaddr_LDADD = $(AM_LDFLAGS) $(CHECK_LIBS) $(COVERAGE_LDFLAGS) libnss_juju.la
 
 include $(top_srcdir)/Makefile.am.coverage
 
