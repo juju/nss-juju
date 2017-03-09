@@ -1,3 +1,7 @@
+[![Build Status](https://travis-ci.org/frobware/nss-juju.svg?branch=master)](https://travis-ci.org/frobware/nss-juju)
+[![Coverage Status](https://coveralls.io/repos/github/frobware/nss-juju/badge.svg?branch=master)](https://coveralls.io/github/frobware/nss-juju?branch=master)
+[![Coverage status](https://codecov.io/gh/frobware/nss-juju/branch/master/graph/badge.svg)](https://codecov.io/gh/frobware/nss-juju)
+
 # Name Service Switch (NSS) module for Juju (Proof of Concept).
 
 This Name Service Switch (NSS) module provides internet address
@@ -46,6 +50,22 @@ IPv6 names must be fully expanded (i.e., no collapsed 0's (zeros)).
 	64 bytes from 192.168.20.1: icmp_seq=3 ttl=64 time=0.048 ms
 	64 bytes from 192.168.20.1: icmp_seq=4 ttl=64 time=0.048 ms
 
+### Reverse address resolution
+
+Reverse address resolution is by default provided for RFC1918 local
+networks and fc00::/7. If a file "/etc/nss-juju-nets.conf" exists it's
+read instead - it should contain whitespace separated list of networks
+for which the reverse resolution should be provided:
+
+	$ getent hosts juju-ip-172-19-0-84
+	172.19.0.84     juju-ip-172-19-0-84
+
+	$ ping -c 3 juju-ip-172-19-0-84
+	PING juju-ip-172-19-0-84 (172.19.0.84) 56(84) bytes of data.
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=1 ttl=64 time=0.043 ms
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=2 ttl=64 time=0.035 ms
+	64 bytes from juju-ip-172-19-0-84 (172.19.0.84): icmp_seq=3 ttl=64 time=0.075 ms
+
 ## Limitations
 
 ### Reverse lookup needs to be handled by the host
@@ -73,7 +93,7 @@ can, however, rely on the host to do reverse lookup.
 	$ dig ip-172-31-0-139.ec2.internal. +short
 	172.31.0.139
 
-#### Reverse lookup on CE
+#### Reverse lookup on GCE
 
 Works and behaves the same way as AWS does.
 

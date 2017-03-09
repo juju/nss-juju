@@ -12,6 +12,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -64,6 +65,16 @@ static struct matcher matchers[] = {
 	{ IPv6_HOSTNAME_RE, NULL },
 	{ IPv4_HOSTNAME_RE, NULL }
 };
+
+static char *localnets[5] = {
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"fc00::/7",
+	NULL
+};
+
+char _nssjuju_configfilename[] = "/etc/nss-juju-nets.conf";
 
 /*
  * shared library constructor
@@ -149,9 +160,8 @@ static int nss_juju_getaddrinfo(const char *name,
 	size_t i;
 
 	for (i = 0; i < NELEMENTS(matchers); i++) {
-		if (matchers[i].pr == NULL)
-			continue;
-		if (find_address(matchers[i].pr, name, ai) == 0)
+		if (matchers[i].pr != NULL &&
+		    find_address(matchers[i].pr, name, ai) == 0)
 			return 0;
 	}
 
@@ -310,4 +320,172 @@ enum nss_status _nss_juju_gethostbyname_r(
 					  buffer, buflen,
 					  errnop, herrnop,
 					  NULL, NULL);
+}
+
+/*
+ * Checks if address is in a subnet.
+ * Input:
+ *  txt - text format address/mask, mask is optional
+ *  laddr - address we want to compare, will be overwritten
+ * Output:
+ *  1 if address is subnet, 0 otherwise
+ */
+static int _addr_in_subnet(char *txt,
+			   const char *laddr,
+			   size_t address_length,
+			   int af)
+{
+	char faddr[sizeof(struct in6_addr)];
+	char * sep;
+	size_t mask, compl, bits;
+	int r;
+	unsigned char bmask;
+
+	if (address_length > sizeof(faddr)) {
+		return 0;
+	}
+
+	sep = strchr(txt, '/');
+	if (sep != NULL) {
+		*sep = 0;
+		mask = atoi(++sep);
+	} else {
+		mask = address_length * 8;
+	}
+
+	if (mask > address_length * 8) {
+		return -1;
+	}
+
+	r = inet_pton(af, txt, faddr);
+	if (r != 1) {
+		return 0;
+	}
+
+	compl = mask / 8;
+	bits = mask % 8;
+	bmask = 0xff << (8-bits);
+	if (!memcmp(laddr, faddr, compl) && ((laddr[compl] & bmask) == (faddr[compl] & bmask))) {
+		return 1;
+	}
+	return 0;
+}
+
+enum nss_status _nss_juju_gethostbyaddr2_r(
+	const void *addr,
+	socklen_t len,
+	int af,
+	struct hostent *result,
+	char *buffer,
+	size_t buflen,
+	int *errnop,
+	int *herrnop,
+	int32_t *ttlp)
+{
+	const uint8_t *c = (uint8_t*) addr;
+	int found;
+	size_t idx, hidx, h_alias_idx, aidx, alistidx, hlen, address_length;
+	FILE * fd;
+
+	address_length = af == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+	if (addr == NULL ||
+	    buflen < strlen("juju-ip-") + INET6_ADDRSTRLEN + address_length + 3 * sizeof(char*) ||
+	    len < address_length ||
+	    (af != AF_INET && af != AF_INET6)) {
+		*errnop = EINVAL;
+		goto return_nss_status_unavail;
+	}
+	found = 0;
+
+	fd = fopen(_nssjuju_configfilename, "r");
+	if (fd == NULL) {
+		char ** p = localnets;
+		while (*p != NULL && !found) {
+			strcpy(buffer, *p);
+			found = _addr_in_subnet(buffer, addr, address_length, af);
+			p++;
+		}
+	} else {
+		while (!feof(fd) && !found) {
+			if (fscanf(fd, "%64s", buffer) != 1) {
+				break;
+			}
+			found = _addr_in_subnet(buffer, addr, address_length, af);
+		}
+		fclose(fd);
+	}
+
+	if (!found) {
+		*errnop = ENOENT;
+		goto return_nss_status_notfound;
+	}
+
+	idx = 0;
+	hidx = idx;
+	switch (af) {
+		case AF_INET:
+			hlen = sprintf(buffer+hidx, "juju-ip-%hhu-%hhu-%hhu-%hhu",
+				       c[0], c[1], c[2], c[3]);
+			break;
+		case AF_INET6:
+			hlen = sprintf(buffer+hidx,
+				       "juju-ip-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x",
+				       c[0], c[1], c[2], c[3], c[4], c[5],
+				       c[6], c[7], c[8], c[9], c[10], c[11],
+				       c[12], c[13], c[14], c[15]);
+			break;
+		default:
+			*errnop = ENOENT;
+			goto return_nss_status_unavail;
+	}
+	idx += ALIGN_PTR(hlen);
+
+	h_alias_idx = idx;
+	idx += ALIGN_PTR(sizeof(char*));
+	*((char**) (buffer + h_alias_idx)) = NULL;
+
+	aidx = idx;
+	idx += ALIGN_PTR(address_length);
+	memcpy(buffer + aidx, addr, address_length);
+
+	alistidx = idx;
+	idx += ALIGN_PTR(2 * sizeof(char**));
+	((char**) (buffer + alistidx))[0] = buffer + aidx;
+	((char**) (buffer + alistidx))[1] = NULL;
+
+	result->h_addrtype = af;
+	result->h_length = address_length;
+	result->h_name = (char*) buffer;
+	result->h_addr_list = (char**) (buffer + alistidx);
+	result->h_aliases = (char**) (buffer + h_alias_idx);
+
+	if (ttlp != NULL) {
+		*ttlp = 0;
+	}
+	*errnop = 0;
+	*herrnop = 0;
+	return NSS_STATUS_SUCCESS;
+
+return_nss_status_unavail:
+	*herrnop = NO_DATA;
+	return NSS_STATUS_UNAVAIL;
+
+return_nss_status_notfound:
+	*herrnop = HOST_NOT_FOUND;
+	return NSS_STATUS_NOTFOUND;
+}
+
+enum nss_status _nss_juju_gethostbyaddr_r(
+	const void *addr,
+	socklen_t len,
+	int af,
+	struct hostent *result,
+	char *buffer,
+	size_t buflen,
+	int *errnop,
+	int *h_errnop)
+{
+	return _nss_juju_gethostbyaddr2_r(addr, len, af, result,
+					  buffer, buflen, errnop,
+					  h_errnop, NULL);
 }
