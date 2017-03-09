@@ -74,7 +74,8 @@ static char *localnets[5] = {
 	NULL
 };
 
-char _nssjuju_configfilename[] = "/etc/nss-juju-nets.conf";
+static char _nssjuju_configfilenamei[] = "/etc/nss-juju-nets.conf";
+char * _nssjuju_configfilename = _nssjuju_configfilenamei;
 
 /*
  * shared library constructor
