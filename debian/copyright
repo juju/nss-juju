@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: nss-juju
-Source: https://github.com/frobware/nss-juju
+Source: https://github.com/juju/nss-juju
 
 Files: *
 Copyright: 2013-2015 Canonical Ltd.
